@@ -3,6 +3,7 @@ import torch.nn.functional as F
 from os.path import dirname, join as pjoin
 import os
 import torch
+import torchvision.transforms as transforms
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 from torchvision.io import read_image
@@ -52,7 +53,8 @@ def path_label_creator():
 
 def main():
     valid = path_label_creator()
-    dog = CustomImageDataset(valid)
+    transformer = transforms.Resize((max_Width,max_Height))
+    dog = CustomImageDataset(valid,transform=transformer)
     train_dataloader = DataLoader(dog, shuffle=True)
     
     dataloader_iterm = (iter(train_dataloader))
