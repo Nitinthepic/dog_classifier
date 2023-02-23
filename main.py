@@ -1,4 +1,5 @@
 import torch
+import exiftool
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
@@ -15,6 +16,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from torch.utils.data import DataLoader
 from torchvision.io import read_image
+import numpy as np
 # Feel free to import other packages, if needed.
 # As long as they are supported by CSL machines.
 
@@ -40,16 +42,22 @@ class CustomImageDataset(Dataset):
 
 annot_path = 'data/Annotation'
 image_path = 'data/Images'
+max_Width = 1000
+max_Height = 1000
 
 def main():
-    valid = []
+    valid = list()
     imageList = list()
+    et = exiftool.ExifToolHelper()
     for element in os.listdir(image_path):
         if(element.startswith("n0")):
             for img_id in os.listdir(os.path.join(image_path, element)):
                 path = os.path.join(element, img_id)
-                label = element.split('-')[1]
-                valid.append((path, label))
+                metadata = et.get_tags(os.path.join(image_path,path),tags=["ImageWidth", "ImageHeight"])
+                if metadata[0]['File:ImageWidth'] <= max_Width and metadata[0]['File:ImageHeight'] <= max_Height:
+                    label = element.split('-')[1]
+                    valid.append((path, label))
+    
 
 
     
