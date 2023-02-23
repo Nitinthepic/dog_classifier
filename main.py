@@ -56,15 +56,32 @@ def main():
     dog = CustomImageDataset(valid)
     train_dataloader = DataLoader(dog, shuffle=True)
     
-    train_features, train_labels = next(iter(train_dataloader))
-    print(train_labels)
-    #print(f"Feature batch shape: {train_features.size()}")
-    #print(f"Labels batch shape: {train_labels.size()}")
-    img = train_features[0].squeeze().permute(1,2,0)
-    label = train_labels[0]
-    plt.imshow(img, cmap="gray")
-    plt.show()
-    print(f"Label: {label}")
+    dataloader_iterm = (iter(train_dataloader))
+    max_x=-1
+    max_y=-1
+    img_size=list()
+    while True:
+        try:
+            img, lab = next(dataloader_iterm)
+            max_x = img.shape[2]
+            max_y = img.shape[3]
+            img_size.append((max_x,max_y))
+        except:
+            break
+    img_size = sorted(img_size,reverse=True)
+    for i in range(10):
+        print(img_size[i])
+
+
+    ###
+    #print(train_labels)
+    
+    #img = train_features[0].squeeze().permute(1,2,0)
+    #label = train_labels[0]
+    #plt.imshow(img, cmap="gray")
+    #plt.show()
+    #print(f"Label: {label}")
+    ###
 
 
 
