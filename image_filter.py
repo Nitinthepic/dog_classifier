@@ -16,7 +16,7 @@ threshold = 1250
 #Loops through the images and throws out a certain percentage to see how the 
 #distribution of image sizes look after throwing out images that exceed the threshold
 #bounds. This was used to determine the standard size of our data to be ~1250x1250 for training.
-for file in glob.glob("Images/**/*.jpg", recursive=True):
+for file in glob.glob("data/Images/**/*.jpg", recursive=True):
     with Image.open(file) as im:
         if im.size[0] <= threshold and im.size[1] <= threshold:
             data["x"].append(im.size[0])
