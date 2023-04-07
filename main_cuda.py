@@ -305,6 +305,7 @@ def main():
     np.random.seed(seed)
     torch.cuda.manual_seed(seed)
     torch.backends.cudnn.deterministic = True
+
     valid = path_label_creator(IMAGE_PATH, False)
     transformer = transforms.Resize((max_Width,max_Height))
     dog = CustomImageDataset(valid, transform=transformer, image_path=IMAGE_PATH, pca_enabled=False)
@@ -312,7 +313,6 @@ def main():
     test_loader = DataLoader(dog, batch_size = 32, shuffle=True)
 
     model = models.alexnet(pretrained=False)
-    
     model.classifier[6] = nn.Linear(4096, 120)
     optimizer = SGD(model.classifier.parameters(), lr = 0.01, momentum = 0.9, weight_decay = 0.0005) 
     scheduler = ReduceLROnPlateau(optimizer, patience = 4, factor = 0.1, mode = 'min')
@@ -321,17 +321,11 @@ def main():
 
     
     model = model.to(device)
-    eval_model(model,test_loader,criterion,1,len(test_loader),device)
-    train_model(model,train_loader,optimizer,criterion,5,len(train_loader))
-    # dataloader_iterm = (iter(train_dataloader))
-    # train_features, train_labels = next(dataloader_iterm)
+    for epoch in range(1,10):
+        eval_model(model,test_loader,criterion,epoch,len(test_loader),device)
+        train_model(model,train_loader,optimizer,criterion,epoch,len(train_loader))
     
-    # img = train_features[0].squeeze().permute(1,2,0)
-    # label = train_labels[0]
-    # plt.imshow(img, cmap="gray")
-    # plt.show()
-    # print(f"Label: {label}")
-    # 
+     
 
 
 
