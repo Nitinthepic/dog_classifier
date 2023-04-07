@@ -1,9 +1,9 @@
 import exiftool
 import torch.nn.functional as F
+from pca import dog_pca
 from os.path import dirname, join as pjoin
 import os
 import torch.nn as nn
-from tqdm import tqdm
 import torch
 import glob
 import numpy as np
@@ -16,10 +16,13 @@ import matplotlib.pyplot as plt
 from torch.optim import SGD
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from sklearn.decomposition import PCA
+from tqdm import tqdm
 import torchvision.models as models
 import random
 # Feel free to import other packages, if needed.
 # As long as they are supported by CSL machines.
+
+
 
 class CustomImageDataset(Dataset):
     def __init__(self, dog_list, image_path, transform=None, target_transform=None, pca_enabled=True):
@@ -36,35 +39,9 @@ class CustomImageDataset(Dataset):
         #Otherwise it will not generate new images to save resources.
         if self.pca_enabled and not os.path.exists(self.image_path):
             os.mkdir(self.image_path)
-            for image in glob.glob(f"{self.source_data_path}/**/*.jpg", recursive=True):
-                folder = image.split("/")[2]
-                file_name = image.split("/")[3]
-                with Image.open(image) as im:
-                    pixels = np.array(im)
-                    r, g, b = pixels[:,:,0], pixels[:,:,1], pixels[:,:,2]
-                    pca_r = PCA(n_components=0.99)
-                    pca_g = PCA(n_components=0.99)
-                    pca_b = PCA(n_components=0.99)
-                    pca_r_trans = pca_r.fit_transform(r)
-                    pca_g_trans = pca_g.fit_transform(g)
-                    pca_b_trans = pca_b.fit_transform(b)
-
-                    pca_r_org = pca_r.inverse_transform(pca_r_trans)
-                    pca_g_org = pca_g.inverse_transform(pca_g_trans)
-                    pca_b_org = pca_b.inverse_transform(pca_b_trans)
-                    
-                    temp = np.dstack((pca_r_org,pca_g_org,pca_b_org))
-                    temp = temp.astype(np.uint8)
-                    new_image = Image.fromarray(temp)
-                    new_image.convert("RGB")
-
-                    if not os.path.exists(f"{self.image_path}/{folder}"):
-                        os.mkdir(f"{self.image_path}/{folder}")
-
-                    new_image.save(f"{self.image_path}/{folder}/{file_name}")
-                    
-
-
+            print("Performing PCA on all images...\n")
+            dog_pca(self.source_data_path, self.image_path)
+                
     def __len__(self):
         return len(self.dog_list)
 
@@ -301,7 +278,7 @@ def eval_model(model, test_loader, criterion, epoch, batch_count):
 def main():
     valid = path_label_creator(IMAGE_PATH, False)
     transformer = transforms.Resize((max_Width,max_Height))
-    dog = CustomImageDataset(valid, transform=transformer, image_path=IMAGE_PATH, pca_enabled=False)
+    dog = CustomImageDataset(valid, transform=transformer, image_path=IMAGE_PATH, pca_enabled=True)
     train_loader = DataLoader(dog, batch_size = 32, shuffle=True)
     test_loader = DataLoader(dog, batch_size = 32, shuffle=True)
 
@@ -326,8 +303,6 @@ def main():
     # print(f"Label: {label}")
     # 
 
-
-
-
-main()
+if __name__ == "__main__":
+    main()
 
