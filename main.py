@@ -17,6 +17,7 @@ from torch.optim import SGD
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from sklearn.decomposition import PCA
 import torchvision.models as models
+import random
 # Feel free to import other packages, if needed.
 # As long as they are supported by CSL machines.
 
