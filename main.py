@@ -79,8 +79,8 @@ class CustomImageDataset(Dataset):
 
 annot_path = 'data/Annotation'
 IMAGE_PATH = 'data/Images'
-max_Width = 1000
-max_Height = 1000
+max_Width = 1250
+max_Height = 1250
 breed_dict = {'silky_terrier': 0,
  'Scottish_deerhound': 1,
  'Chesapeake_Bay_retriever': 2,
@@ -202,21 +202,33 @@ breed_dict = {'silky_terrier': 0,
  'Leonberg': 118,
  'black': 119}
 
-def path_label_creator(img_dir):
+def path_label_creator(img_dir, truncate):
     path_label_list = list()
     et = exiftool.ExifToolHelper()
-    for element in os.listdir(img_dir):
-        if(element.startswith("n0")):
-            for img_id in os.listdir(os.path.join(img_dir, element)):
-                path = os.path.join(element, img_id)
-                metadata = et.get_tags(os.path.join(img_dir,path),tags=["ImageWidth", "ImageHeight"])
-                try:
-                    if metadata[0]['File:ImageWidth'] <= max_Width and metadata[0]['File:ImageHeight'] <= max_Height:
+    if truncate:
+        for element in os.listdir(img_dir):
+            if(element.startswith("n0")):
+                for img_id in os.listdir(os.path.join(img_dir, element)):
+                    path = os.path.join(element, img_id)
+                    metadata = et.get_tags(os.path.join(img_dir,path),tags=["ImageWidth", "ImageHeight"])
+                    try:
+                        if metadata[0]['File:ImageWidth'] <= max_Width and metadata[0]['File:ImageHeight'] <= max_Height:
+                            label = element.split('-')[1]
+                            label = breed_dict[label]
+                            path_label_list.append((path, label))
+                    except KeyError:
+                        print(f"{path} is missing certain label")
+    else:
+        for element in os.listdir(img_dir):
+            if(element.startswith("n0")):
+                for img_id in os.listdir(os.path.join(img_dir, element)):
+                    path = os.path.join(element, img_id)
+                    try:
                         label = element.split('-')[1]
                         label = breed_dict[label]
                         path_label_list.append((path, label))
-                except KeyError:
-                    print(f"{path} is missing certain label")
+                    except KeyError:
+                        print(f"{path} is missing certain label")
     return path_label_list
 
 
@@ -226,7 +238,7 @@ def get_lr(optimizer):
         return param_group['lr']
 
 
-def train_model(model, train_loader, optimizer, criterion, epochs):
+def train_model(model, train_loader, optimizer, criterion, epoch, batch_count):
     """
     model (torch.nn.module): The model created to train
     train_loader (pytorch data loader): Training data loader
@@ -238,28 +250,55 @@ def train_model(model, train_loader, optimizer, criterion, epochs):
     train_loss = 0.0
     loss = 0
     epoch_cout = 0
-    for epoch in range(epochs):
-        for img, label in tqdm(train_loader, total=len(train_loader)):
-            # print(img)
-            # print(label)
-            img = img.float()
-            optimizer.zero_grad()
-            output = model(img)
-            batch_loss = criterion(output, label)
-            batch_loss.backward()
-            optimizer.step()
-            loss +=batch_loss.item()
-        train_loss = loss/32
-        print('Training loss for epoch {} is {:.4f}'.format(epoch, train_loss))
-        print('Validation for epoch {}'.format(epoch))
-        torch.save(model.state_dict(), f"epoch_{epoch_cout}_"+'alexnet_finetuning.pth')
-        print("Finished Saving!!!")
-        epoch_cout+=1
+    for img, label in tqdm(train_loader, total=len(train_loader)):
+        img = img.float()
+        optimizer.zero_grad()
+        output = model(img)
+        batch_loss = criterion(output, label)
+        batch_loss.backward()
+        optimizer.step()
+        loss +=batch_loss.item()
+    train_loss = loss/batch_count
+    print('Training loss for epoch {} is {:.4f}'.format(epoch, train_loss))
+    print('Validation for epoch {}'.format(epoch))
+    torch.save(model.state_dict(), f"epoch_{epoch_cout}_"+'alexnet_finetuning.pth')
+    print("Finished Saving!!!")
+    epoch_cout+=1
 
     return train_loss
 
+def eval_model(model, test_loader, criterion, epoch, batch_count):
+    """
+    model (torch.nn.module): The model created to train
+    train_loader (pytorch data loader): Training data loader
+    optimizer (optimizer.*): A instance of some sort of optimizer, usually SGD
+    criterion (nn.CrossEntropyLoss) : Loss function used to train the network
+    epoch (int): Current epoch number
+    """
+    with torch.no_grad():
+        model.eval()
+        val_loss = 0.0
+        loss = 0
+        epoch_cout = 0
+        correct = 0
+        for img, label in tqdm(test_loader, total=len(test_loader)):
+            img = img.float()
+            output = model(img)
+            batch_loss = criterion(output, label)
+            loss +=batch_loss.item()
+            val_loss = loss/batch_count
+            pred = output.max(1, keepdim=True)[1]
+            correct += pred.eq(label.view_as(pred)).sum().item()
+        test_acc = correct / len(test_loader.dataset)
+        print('[Test set] Epoch: {:d}, Accuracy: {:.2f}%\n'.format(
+        epoch, 100. * test_acc))
+        epoch_cout+=1
+    return test_acc
+
+       
+
 def main():
-    valid = path_label_creator(IMAGE_PATH)
+    valid = path_label_creator(IMAGE_PATH, False)
     transformer = transforms.Resize((max_Width,max_Height))
     dog = CustomImageDataset(valid, transform=transformer, image_path=IMAGE_PATH, pca_enabled=False)
     train_loader = DataLoader(dog, batch_size = 32, shuffle=True)
@@ -273,7 +312,9 @@ def main():
     criterion = nn.CrossEntropyLoss()   
     
     # print("dog")
-    train_model(model,train_loader,optimizer,criterion,5)
+
+    eval_model(model,test_loader,criterion,1,len(test_loader))
+    train_model(model,train_loader,optimizer,criterion,5,len(train_loader))
     # dataloader_iterm = (iter(train_dataloader))
     # train_features, train_labels = next(dataloader_iterm)
     
