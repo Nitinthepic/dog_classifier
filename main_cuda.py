@@ -1,9 +1,8 @@
-import exiftool
-import torch.nn.functional as F
-from pca import dog_pca
+
 from os.path import dirname, join as pjoin
 import os
 import torch.nn as nn
+from tqdm import tqdm
 import torch
 import glob
 import numpy as np
@@ -16,12 +15,10 @@ import matplotlib.pyplot as plt
 from torch.optim import SGD
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from sklearn.decomposition import PCA
-from tqdm import tqdm
 import torchvision.models as models
+import random
 # Feel free to import other packages, if needed.
 # As long as they are supported by CSL machines.
-
-
 
 class CustomImageDataset(Dataset):
     def __init__(self, dog_list, image_path, transform=None, target_transform=None, pca_enabled=True):
@@ -38,9 +35,35 @@ class CustomImageDataset(Dataset):
         #Otherwise it will not generate new images to save resources.
         if self.pca_enabled and not os.path.exists(self.image_path):
             os.mkdir(self.image_path)
-            print("Performing PCA on all images...\n")
-            dog_pca(self.source_data_path, self.image_path)
-                
+            for image in glob.glob(f"{self.source_data_path}/**/*.jpg", recursive=True):
+                folder = image.split("/")[2]
+                file_name = image.split("/")[3]
+                with Image.open(image) as im:
+                    pixels = np.array(im)
+                    r, g, b = pixels[:,:,0], pixels[:,:,1], pixels[:,:,2]
+                    pca_r = PCA(n_components=0.99)
+                    pca_g = PCA(n_components=0.99)
+                    pca_b = PCA(n_components=0.99)
+                    pca_r_trans = pca_r.fit_transform(r)
+                    pca_g_trans = pca_g.fit_transform(g)
+                    pca_b_trans = pca_b.fit_transform(b)
+
+                    pca_r_org = pca_r.inverse_transform(pca_r_trans)
+                    pca_g_org = pca_g.inverse_transform(pca_g_trans)
+                    pca_b_org = pca_b.inverse_transform(pca_b_trans)
+                    
+                    temp = np.dstack((pca_r_org,pca_g_org,pca_b_org))
+                    temp = temp.astype(np.uint8)
+                    new_image = Image.fromarray(temp)
+                    new_image.convert("RGB")
+
+                    if not os.path.exists(f"{self.image_path}/{folder}"):
+                        os.mkdir(f"{self.image_path}/{folder}")
+
+                    new_image.save(f"{self.image_path}/{folder}/{file_name}")
+                    
+
+
     def __len__(self):
         return len(self.dog_list)
 
@@ -181,15 +204,14 @@ breed_dict = {'silky_terrier': 0,
 
 def path_label_creator(img_dir, truncate):
     path_label_list = list()
-    et = exiftool.ExifToolHelper()
     if truncate:
         for element in os.listdir(img_dir):
             if(element.startswith("n0")):
                 for img_id in os.listdir(os.path.join(img_dir, element)):
                     path = os.path.join(element, img_id)
-                    metadata = et.get_tags(os.path.join(img_dir,path),tags=["ImageWidth", "ImageHeight"])
+                    #metadata = et.get_tags(os.path.join(img_dir,path),tags=["ImageWidth", "ImageHeight"])
                     try:
-                        if metadata[0]['File:ImageWidth'] <= max_Width and metadata[0]['File:ImageHeight'] <= max_Height:
+                        #if metadata[0]['File:ImageWidth'] <= max_Width and metadata[0]['File:ImageHeight'] <= max_Height:
                             label = element.split('-')[1]
                             label = breed_dict[label]
                             path_label_list.append((path, label))
@@ -215,7 +237,7 @@ def get_lr(optimizer):
         return param_group['lr']
 
 
-def train_model(model, train_loader, optimizer, criterion, epoch, batch_count):
+def train_model(model, train_loader, optimizer, criterion, epoch, batch_count, device):
     """
     model (torch.nn.module): The model created to train
     train_loader (pytorch data loader): Training data loader
@@ -229,6 +251,7 @@ def train_model(model, train_loader, optimizer, criterion, epoch, batch_count):
     epoch_cout = 0
     for img, label in tqdm(train_loader, total=len(train_loader)):
         img = img.float()
+        img, label = img.to(device, dtype = torch.float), label.to(device, dtype = torch.long)
         optimizer.zero_grad()
         output = model(img)
         batch_loss = criterion(output, label)
@@ -244,7 +267,7 @@ def train_model(model, train_loader, optimizer, criterion, epoch, batch_count):
 
     return train_loss
 
-def eval_model(model, test_loader, criterion, epoch, batch_count):
+def eval_model(model, test_loader, criterion, epoch, batch_count, device):
     """
     model (torch.nn.module): The model created to train
     train_loader (pytorch data loader): Training data loader
@@ -260,6 +283,7 @@ def eval_model(model, test_loader, criterion, epoch, batch_count):
         correct = 0
         for img, label in tqdm(test_loader, total=len(test_loader)):
             img = img.float()
+            img, label = img.to(device, dtype = torch.float), label.to(device, dtype = torch.long)
             output = model(img)
             batch_loss = criterion(output, label)
             loss +=batch_loss.item()
@@ -275,9 +299,15 @@ def eval_model(model, test_loader, criterion, epoch, batch_count):
        
 
 def main():
+    seed = 69
+    random.seed(seed)
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    np.random.seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
     valid = path_label_creator(IMAGE_PATH, False)
     transformer = transforms.Resize((max_Width,max_Height))
-    dog = CustomImageDataset(valid, transform=transformer, image_path=IMAGE_PATH, pca_enabled=True)
+    dog = CustomImageDataset(valid, transform=transformer, image_path=IMAGE_PATH, pca_enabled=False)
     train_loader = DataLoader(dog, batch_size = 32, shuffle=True)
     test_loader = DataLoader(dog, batch_size = 32, shuffle=True)
 
@@ -287,10 +317,11 @@ def main():
     optimizer = SGD(model.classifier.parameters(), lr = 0.01, momentum = 0.9, weight_decay = 0.0005) 
     scheduler = ReduceLROnPlateau(optimizer, patience = 4, factor = 0.1, mode = 'min')
     criterion = nn.CrossEntropyLoss()   
-    
-    # print("dog")
+    device = torch.device('cuda')
 
-    eval_model(model,test_loader,criterion,1,len(test_loader))
+    
+    model = model.to(device)
+    eval_model(model,test_loader,criterion,1,len(test_loader),device)
     train_model(model,train_loader,optimizer,criterion,5,len(train_loader))
     # dataloader_iterm = (iter(train_dataloader))
     # train_features, train_labels = next(dataloader_iterm)
@@ -302,6 +333,8 @@ def main():
     # print(f"Label: {label}")
     # 
 
-if __name__ == "__main__":
-    main()
+
+
+
+main()
 
