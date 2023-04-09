@@ -10,7 +10,7 @@ from PIL import Image
 import torchvision.transforms as transforms
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
-from torchvision.io import read_image
+from torchvision.io import read_image, ImageReadMode
 import matplotlib.pyplot as plt
 from torch.optim import SGD
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -69,7 +69,7 @@ class CustomImageDataset(Dataset):
 
     def __getitem__(self, idx):
         img_path = os.path.join(self.image_path,self.dog_list[idx][0])
-        image = read_image(img_path)
+        image = read_image(img_path,mode=ImageReadMode.RGB)
         label = self.dog_list[idx][1]
         if self.transform:
             image = self.transform(image)
@@ -248,7 +248,6 @@ def train_model(model, train_loader, optimizer, criterion, epoch, batch_count, d
     model.train()
     train_loss = 0.0
     loss = 0
-    epoch_cout = 0
     for img, label in tqdm(train_loader, total=len(train_loader)):
         img = img.float()
         img, label = img.to(device, dtype = torch.float), label.to(device, dtype = torch.long)
@@ -261,9 +260,8 @@ def train_model(model, train_loader, optimizer, criterion, epoch, batch_count, d
     train_loss = loss/batch_count
     print('Training loss for epoch {} is {:.4f}'.format(epoch, train_loss))
     print('Validation for epoch {}'.format(epoch))
-    torch.save(model.state_dict(), f"epoch_{epoch_cout}_"+'alexnet_finetuning.pth')
+    torch.save(model.state_dict(), f"epoch_{epoch}_"+'alexnet_finetuning.pth')
     print("Finished Saving!!!")
-    epoch_cout+=1
 
     return train_loss
 
@@ -279,7 +277,6 @@ def eval_model(model, test_loader, criterion, epoch, batch_count, device):
         model.eval()
         val_loss = 0.0
         loss = 0
-        epoch_cout = 0
         correct = 0
         for img, label in tqdm(test_loader, total=len(test_loader)):
             img = img.float()
@@ -287,14 +284,16 @@ def eval_model(model, test_loader, criterion, epoch, batch_count, device):
             output = model(img)
             batch_loss = criterion(output, label)
             loss +=batch_loss.item()
-            val_loss = loss/batch_count
             pred = output.max(1, keepdim=True)[1]
             correct += pred.eq(label.view_as(pred)).sum().item()
+
+        val_loss = loss/batch_count    
         test_acc = correct / len(test_loader.dataset)
+
         print('[Test set] Epoch: {:d}, Accuracy: {:.2f}%\n'.format(
         epoch, 100. * test_acc))
-        epoch_cout+=1
-    return test_acc
+
+    return (test_acc, val_loss)
 
        
 
@@ -322,8 +321,8 @@ def main():
     
     model = model.to(device)
     for epoch in range(1,10):
-        eval_model(model,test_loader,criterion,epoch,len(test_loader),device)
         train_model(model,train_loader,optimizer,criterion,epoch,len(train_loader))
+        eval_model(model,test_loader,criterion,epoch,len(test_loader),device)
     
      
 
