@@ -321,7 +321,7 @@ def main():
     
     model = model.to(device)
     for epoch in range(1,10):
-        train_model(model,train_loader,optimizer,criterion,epoch,len(train_loader))
+        train_model(model,train_loader,optimizer,criterion,epoch,len(train_loader),device)
         eval_model(model,test_loader,criterion,epoch,len(test_loader),device)
     
      
