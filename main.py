@@ -1,10 +1,8 @@
 import argparse
 import random
 import os
-import glob
 
 from sklearn.model_selection import train_test_split
-from sklearn.decomposition import PCA
 
 import torch
 from torch import nn, optim
@@ -15,7 +13,6 @@ from torchvision import models, transforms
 from tqdm import tqdm
 
 import numpy as np
-from PIL import Image
 
 import pandas as pd
 
@@ -105,38 +102,6 @@ class CustomImageDataset(Dataset):
         self.target_transform = target_transform
         self.max_image_size = 1250  # Max image size is 1250x1250
         self.pca_enabled = pca_enabled
-
-        # THIS TAKES A LONG TIME.
-        # Will generate images that have been PCA'd, make sure you do not have the Images-pca folder in your data folder.
-        # Otherwise it will not generate new images to save resources.
-        if self.pca_enabled and not os.path.exists(self.image_path):
-            os.mkdir(self.image_path)
-            for image in glob.glob(f"{self.source_data_path}/**/*.jpg", recursive=True):
-                folder = image.split("/")[2]
-                file_name = image.split("/")[3]
-                with Image.open(image) as im:
-                    pixels = np.array(im)
-                    r, g, b = pixels[:, :, 0], pixels[:, :, 1], pixels[:, :, 2]
-                    pca_r = PCA(n_components=0.99)
-                    pca_g = PCA(n_components=0.99)
-                    pca_b = PCA(n_components=0.99)
-                    pca_r_trans = pca_r.fit_transform(r)
-                    pca_g_trans = pca_g.fit_transform(g)
-                    pca_b_trans = pca_b.fit_transform(b)
-
-                    pca_r_org = pca_r.inverse_transform(pca_r_trans)
-                    pca_g_org = pca_g.inverse_transform(pca_g_trans)
-                    pca_b_org = pca_b.inverse_transform(pca_b_trans)
-
-                    temp = np.dstack((pca_r_org, pca_g_org, pca_b_org))
-                    temp = temp.astype(np.uint8)
-                    new_image = Image.fromarray(temp)
-                    new_image.convert("RGB")
-
-                    if not os.path.exists(f"{self.image_path}/{folder}"):
-                        os.mkdir(f"{self.image_path}/{folder}")
-
-                    new_image.save(f"{self.image_path}/{folder}/{file_name}")
 
     def __len__(self):
         return len(self.dog_list)
@@ -375,13 +340,9 @@ def eval_model(model, test_loader, criterion, epoch):
             correct += pred.eq(label.view_as(pred)).sum().item()
 
         val_loss = loss / len(test_loader)
-        test_acc = correct / len(test_loader.dataset)
+        test_acc = 100 * (correct / len(test_loader.dataset))
 
-        print(
-            "[Validation Set] Epoch: {:d}, Accuracy: {:.2f}%\n".format(
-                epoch, 100.0 * test_acc
-            )
-        )
+        print("[Validation Set] Epoch: {epoch}, Accuracy: {test_acc}")
 
     return (test_acc, val_loss)
 
