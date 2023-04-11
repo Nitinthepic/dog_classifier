@@ -25,15 +25,23 @@ from tqdm import tqdm
 import pandas as pd
 
 def arg_creator():
-    parser = argparse.ArgumentParser("Used for configuring operating params")
-    parser.add_argument("--device", type=str, default='cpu')
-    parser.add_argument("--batch_size", type=int, default=32)
-    parser.add_argument("--epochs", type=int, default=10)
-    parser.add_argument("--train_size", type=float, default=0.8)
-    parser.add_argument("--predict_mode",action='store_true')
-    parser.add_argument("--predict_img_path",type=str)
-    parser.add_argument("--load_checkpoint",type=str,default=None)
-    parser.add_argument("--store_output",type=str,default=None)
+    parser = argparse.ArgumentParser(prog="Dog Classifier",
+                                    description="Used for configuring operating params for either training the model or having it classify a dog")
+    parser.add_argument("--device", type=str, default='cpu',
+                        help="Picks the device to train the model, defaults to cpu, can use cuda")
+    parser.add_argument("--batch_size", type=int, default=32,
+                        help="sets the batch size, defaults to 32")
+    parser.add_argument("--epochs", type=int, default=10,
+                        help="number of epochs to run training, defaults to 32")
+    parser.add_argument("--train_size", type=float, default=0.8,
+                        help="the proportion of the dataset to be used for training")
+    parser.add_argument("--predict_mode",action='store_true',
+                        help="when set, model does not train, but instead will predict the breed of a given image, if set, must also set predict_img_path")
+    parser.add_argument("--predict_img_path",type=str,
+                        help="location of the image for the breed will be predicted, must be inside data/Images")
+    parser.add_argument("--load_checkpoint",type=str,default=None,help="filename/location of a pth checkpoint file to be loaded")
+    parser.add_argument("--store_output",type=str,default=None,
+                        help="if set, this flag's input will be the filename for a csv with accuracy, loss, and epoch")
     return parser.parse_args()
 
 class CustomImageDataset(Dataset):
@@ -344,7 +352,7 @@ def train_val_loop(args,model,transformer):
 
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=0.001)
-    val_loss = np.inf
+    best_loss = 1e99
 
     if args.store_output is not None:
         df = pd.DataFrame()
@@ -360,9 +368,11 @@ def train_val_loop(args,model,transformer):
             os.path.join("checkpoint_folder",f"epoch_{epoch}_"+'finetuning.pth'))
             print("Finished Saving!!!")  
         if args.store_output is not None:
-            df = df.append({'Epoch': epoch, 'Accuracy': acc, 'Validation Loss': val_loss})
+            new_row = pd.DataFrame([{'Epoch': epoch, 'Accuracy': acc, 'Validation Loss': val_loss}])
+            df = pd.concat([df, new_row])
     if args.store_output is not None:
        df.to_csv(args.store_output+'.csv')
+       
 
 def main():
     args = arg_creator()
