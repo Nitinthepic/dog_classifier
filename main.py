@@ -1,5 +1,7 @@
 
-from os.path import dirname, join as pjoin
+from os.path import dirname, join
+import argparse
+from sklearn.model_selection import train_test_split
 import os
 import torch.nn as nn
 from tqdm import tqdm
@@ -11,14 +13,28 @@ import torchvision.transforms as transforms
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 from torchvision.io import read_image, ImageReadMode
-import matplotlib.pyplot as plt
-from torch.optim import SGD
-from torch.optim.lr_scheduler import ReduceLROnPlateau
 from sklearn.decomposition import PCA
 import torchvision.models as models
 import random
-# Feel free to import other packages, if needed.
-# As long as they are supported by CSL machines.
+import torch
+import torch.nn as nn
+import torchvision.models as models
+import torch.optim as optim
+import torchvision.transforms as transforms
+from tqdm import tqdm
+import pandas as pd
+
+def arg_creator():
+    parser = argparse.ArgumentParser("Used for configuring operating params")
+    parser.add_argument("--device", type=str, default='cpu')
+    parser.add_argument("--batch_size", type=int, default=32)
+    parser.add_argument("--epochs", type=int, default=10)
+    parser.add_argument("--train_size", type=float, default=0.8)
+    parser.add_argument("--predict_mode",action='store_true')
+    parser.add_argument("--predict_img_path",type=str)
+    parser.add_argument("--load_checkpoint",type=str,default=None)
+    parser.add_argument("--store_output",type=str,default=None)
+    return parser.parse_args()
 
 class CustomImageDataset(Dataset):
     def __init__(self, dog_list, image_path, transform=None, target_transform=None, pca_enabled=True):
@@ -69,7 +85,6 @@ class CustomImageDataset(Dataset):
 
     def __getitem__(self, idx):
         img_path = os.path.join(self.image_path,self.dog_list[idx][0])
-        print(img_path)
         image = read_image(img_path,mode=ImageReadMode.RGB)
         label = self.dog_list[idx][1]
         if self.transform:
@@ -78,10 +93,12 @@ class CustomImageDataset(Dataset):
             label = self.target_transform(label)
         return image, label
 
-annot_path = os.path.join('data','Annotation')
+ANNOT_PATH = os.path.join('data','Annotation')
 IMAGE_PATH = os.path.join('data','Images')
-max_Width = 1250
-max_Height = 1250
+max_Width = 227
+max_Height = 227
+NUM_CLASSES = 120
+device = torch.device('cpu')
 breed_dict = {'silky_terrier': 0,
  'Scottish_deerhound': 1,
  'Chesapeake_Bay_retriever': 2,
@@ -203,32 +220,20 @@ breed_dict = {'silky_terrier': 0,
  'Leonberg': 118,
  'black': 119}
 
-def path_label_creator(img_dir, truncate):
+reverse_breed_dict = dict()
+
+def path_label_creator(img_dir):
     path_label_list = list()
-    if truncate:
-        for element in os.listdir(img_dir):
-            if(element.startswith("n0")):
-                for img_id in os.listdir(os.path.join(img_dir, element)):
-                    path = os.path.join(element, img_id)
-                    #metadata = et.get_tags(os.path.join(img_dir,path),tags=["ImageWidth", "ImageHeight"])
-                    try:
-                        #if metadata[0]['File:ImageWidth'] <= max_Width and metadata[0]['File:ImageHeight'] <= max_Height:
-                            label = element.split('-')[1]
-                            label = breed_dict[label]
-                            path_label_list.append((path, label))
-                    except KeyError:
-                        print(f"{path} is missing certain label")
-    else:
-        for element in os.listdir(img_dir):
-            if(element.startswith("n0")):
-                for img_id in os.listdir(os.path.join(img_dir, element)):
-                    path = os.path.join(element, img_id)
-                    try:
-                        label = element.split('-')[1]
-                        label = breed_dict[label]
-                        path_label_list.append((path, label))
-                    except KeyError:
-                        print(f"{path} is missing certain label")
+    for element in os.listdir(img_dir):
+        if(element.startswith("n0")):
+            for img_id in os.listdir(os.path.join(img_dir, element)):
+                path = os.path.join(element, img_id)
+                try:
+                    label = element.split('-')[1]
+                    label = breed_dict[label]
+                    path_label_list.append((path, label))
+                except KeyError:
+                    print(f"{path} is missing certain label")
     return path_label_list
 
 
@@ -238,14 +243,7 @@ def get_lr(optimizer):
         return param_group['lr']
 
 
-def train_model(model, train_loader, optimizer, criterion, epoch, batch_count, device):
-    """
-    model (torch.nn.module): The model created to train
-    train_loader (pytorch data loader): Training data loader
-    optimizer (optimizer.*): A instance of some sort of optimizer, usually SGD
-    criterion (nn.CrossEntropyLoss) : Loss function used to train the network
-    epoch (int): Current epoch number
-    """
+def train_model(model, train_loader, optimizer, criterion, epoch):
     model.train()
     train_loss = 0.0
     loss = 0
@@ -258,22 +256,12 @@ def train_model(model, train_loader, optimizer, criterion, epoch, batch_count, d
         batch_loss.backward()
         optimizer.step()
         loss +=batch_loss.item()
-    train_loss = loss/batch_count
+    train_loss = loss/len(train_loader)
     print('Training loss for epoch {} is {:.4f}'.format(epoch, train_loss))
-    print('Validation for epoch {}'.format(epoch))
-    torch.save(model.state_dict(), f"epoch_{epoch}_"+'alexnet_finetuning.pth')
-    print("Finished Saving!!!")
 
     return train_loss
 
-def eval_model(model, test_loader, criterion, epoch, batch_count, device):
-    """
-    model (torch.nn.module): The model created to train
-    train_loader (pytorch data loader): Training data loader
-    optimizer (optimizer.*): A instance of some sort of optimizer, usually SGD
-    criterion (nn.CrossEntropyLoss) : Loss function used to train the network
-    epoch (int): Current epoch number
-    """
+def eval_model(model, test_loader, criterion, epoch):
     with torch.no_grad():
         model.eval()
         val_loss = 0.0
@@ -284,21 +272,104 @@ def eval_model(model, test_loader, criterion, epoch, batch_count, device):
             img, label = img.to(device, dtype = torch.float), label.to(device, dtype = torch.long)
             output = model(img)
             batch_loss = criterion(output, label)
-            loss +=batch_loss.item()
+            loss += batch_loss.item()
             pred = output.max(1, keepdim=True)[1]
             correct += pred.eq(label.view_as(pred)).sum().item()
 
-        val_loss = loss/batch_count    
+        val_loss = loss/len(test_loader)    
         test_acc = correct / len(test_loader.dataset)
 
-        print('[Test set] Epoch: {:d}, Accuracy: {:.2f}%\n'.format(
+        print('[Validation Set] Epoch: {:d}, Accuracy: {:.2f}%\n'.format(
         epoch, 100. * test_acc))
 
     return (test_acc, val_loss)
 
-       
+def test_img(model, dataset):
+    model.eval()
+    for img, label in tqdm(dataset, total=len(dataset)):
+            img = img.float()
+            img, label = img.to(device, dtype = torch.float), label.to(device, dtype = torch.long)
+            output = model(img)
+            pred = output.max(1, keepdim=True)[1]
+            return pred
+
+
+class ResNet50(nn.Module):
+    def __init__(self, num_classes):
+        super(ResNet50, self).__init__()
+        self.resnet50 = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
+        num_filters = self.resnet50.fc.in_features
+        self.resnet50.fc = nn.Linear(num_filters, num_classes)
+
+    def forward(self, x):
+        x = self.resnet50(x)
+        return x  
+    
+
+def predict_img(args, model, transformer):
+    valid = [(args.predict_img_path,9-10)]
+    dog = CustomImageDataset(valid, transform=transformer, image_path=IMAGE_PATH, pca_enabled=False)
+        
+
+    predict_test = DataLoader(dog, batch_size = 128, shuffle=True, num_workers=2)
+        
+    print(reverse_breed_dict[(test_img(model,predict_test)).item()])
+
+def train_val_loop(args,model,transformer):
+    image_pathlist = path_label_creator(IMAGE_PATH)
+    image_train, image_val = train_test_split(image_pathlist,
+                                                train_size=args.train_size,
+                                                shuffle=True)
+
+    train_ds = CustomImageDataset(image_train,
+                                transform=transformer, 
+                                image_path=IMAGE_PATH, 
+                                pca_enabled=False)
+    
+                
+    val_ds = CustomImageDataset(image_val,
+                                transform=transformer, 
+                                image_path=IMAGE_PATH, 
+                                pca_enabled=False)
+        
+    train_loader = DataLoader(train_ds,
+                            batch_size = args.batch_size,
+                            shuffle=True,
+                            num_workers=2)
+        
+    validation_loader = DataLoader(val_ds,
+                                batch_size = args.batch_size,
+                                shuffle=True,
+                                num_workers=2)
+
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    val_loss = np.inf
+
+    if args.store_output is not None:
+        df = pd.DataFrame()
+
+    for epoch in range(1,args.epochs+1):
+        train_model(model,train_loader,optimizer,criterion,epoch)
+        acc, val_loss = eval_model(model,validation_loader,criterion,epoch)   
+        if val_loss <= best_loss:
+            print('Validation loss has reduced from {:.4f} to {:.4f}'.format(best_loss, val_loss))
+            print('Saving model')
+            best_loss = val_loss
+            torch.save(model.state_dict(),
+            os.path.join("checkpoint_folder",f"epoch_{epoch}_"+'finetuning.pth'))
+            print("Finished Saving!!!")  
+        if args.store_output is not None:
+            df = df.append({'Epoch': epoch, 'Accuracy': acc, 'Validation Loss': val_loss})
+    if args.store_output is not None:
+       df.to_csv(args.store_output+'.csv')
 
 def main():
+    args = arg_creator()
+    global reverse_breed_dict
+    reverse_breed_dict = {v: k for k, v in breed_dict.items()}
+    global device
+    device = torch.device(args.device)    
     seed = 69
     random.seed(seed)
     os.environ["PYTHONHASHSEED"] = str(seed)
@@ -306,29 +377,21 @@ def main():
     torch.cuda.manual_seed(seed)
     torch.backends.cudnn.deterministic = True
 
-    valid = path_label_creator(IMAGE_PATH, False)
-    transformer = transforms.Resize((max_Width,max_Height))
-    dog = CustomImageDataset(valid, transform=transformer, image_path=IMAGE_PATH, pca_enabled=False)
-    train_loader = DataLoader(dog, batch_size = 32, shuffle=True)
-    test_loader = DataLoader(dog, batch_size = 32, shuffle=True)
-
-    model = models.alexnet(pretrained=False)
-    model.classifier[6] = nn.Linear(4096, 120)
-    optimizer = SGD(model.classifier.parameters(), lr = 0.01, momentum = 0.9, weight_decay = 0.0005) 
-    scheduler = ReduceLROnPlateau(optimizer, patience = 4, factor = 0.1, mode = 'min')
-    criterion = nn.CrossEntropyLoss()   
-    device = torch.device('cuda')
-
-    
+    transformer = transforms.Resize((max_Width,max_Height),antialias=True)
+    model = ResNet50(NUM_CLASSES)
     model = model.to(device)
-    for epoch in range(1,10):
-        train_model(model,train_loader,optimizer,criterion,epoch,len(train_loader),device)
-        eval_model(model,test_loader,criterion,epoch,len(test_loader),device)
-    
+
+    if args.load_checkpoint is not None:
+            model.load_state_dict(torch.load(args.load_checkpoint,map_location=device))
+
+    if args.predict_mode:
+        predict_img(args,model,transformer)
+    else:
+        train_val_loop(args,model,transformer)
      
 
 
 
-
-main()
+if __name__ == '__main__':
+    main()
 
