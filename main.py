@@ -342,7 +342,7 @@ def eval_model(model, test_loader, criterion, epoch):
         val_loss = loss / len(test_loader)
         test_acc = 100 * (correct / len(test_loader.dataset))
 
-        print("[Validation Set] Epoch: {epoch}, Accuracy: {test_acc}")
+        print(f"[Validation Set] Epoch: {epoch}, Accuracy: {test_acc}")
 
     return (test_acc, val_loss)
 
@@ -442,7 +442,7 @@ def train_val_loop(model, transformer):
         acc, val_loss = eval_model(model, validation_loader, criterion, epoch)
 
         if val_loss <= best_loss:
-            print("Validation loss has reduced from {best_loss} to {val_loss}")
+            print(f"Validation loss has reduced from {best_loss} to {val_loss}")
             print("Saving model")
             best_loss = val_loss
             torch.save(
