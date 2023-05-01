@@ -462,7 +462,7 @@ def train_val_loop(model, transformer):
                     {
                         "Epoch": epoch,
                         "Training Loss": train_loss,
-                        "Traing Accuracy": train_acc,
+                        "Trainng Accuracy": train_acc,
                         "Validation Accuracy": acc,
                         "Validation Loss": val_loss,
                     }
