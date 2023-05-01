@@ -243,7 +243,7 @@ breed_dict = {
     "Yorkshire_terrier": 116,
     "groenendael": 117,
     "Leonberg": 118,
-    "black_and_tan Coonhound": 119,
+    "black": 119,
 }
 reverse_breed_dict = {v: k for k, v in breed_dict.items()}
 
@@ -347,7 +347,7 @@ def eval_model(model, test_loader, criterion, epoch):
         val_loss = loss / len(test_loader)
         test_acc = 100 * (correct / len(test_loader.dataset))
 
-        print("[Validation Set] Epoch: {epoch}, Accuracy: {test_acc}")
+        print(f"[Validation Set] Epoch: {epoch}, Accuracy: {test_acc}")
 
     return (test_acc, val_loss)
 
@@ -447,7 +447,7 @@ def train_val_loop(model, transformer):
         acc, val_loss = eval_model(model, validation_loader, criterion, epoch)
 
         if val_loss <= best_loss:
-            print("Validation loss has reduced from {best_loss} to {val_loss}")
+            print(f"Validation loss has reduced from {best_loss} to {val_loss}")
             print("Saving model")
             best_loss = val_loss
             torch.save(
