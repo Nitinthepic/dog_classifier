@@ -243,7 +243,7 @@ breed_dict = {
     "Yorkshire_terrier": 116,
     "groenendael": 117,
     "Leonberg": 118,
-    "black": 119,
+    "black_and_tan Coonhound": 119,
 }
 reverse_breed_dict = {v: k for k, v in breed_dict.items()}
 
@@ -294,6 +294,7 @@ def train_model(model, train_loader, optimizer, criterion, epoch):
     model.train()
     train_loss = 0.0
     loss = 0
+    correct = 0
     for img, label in tqdm(train_loader, total=len(train_loader)):
         img = img.float()
         img, label = img.to(device, dtype=torch.float), label.to(
@@ -305,10 +306,14 @@ def train_model(model, train_loader, optimizer, criterion, epoch):
         batch_loss.backward()
         optimizer.step()
         loss += batch_loss.item()
+        pred = output.max(1, keepdim=True)[1]
+        correct += pred.eq(label.view_as(pred)).sum().item()
+
     train_loss = loss / len(train_loader)
+    train_acc = 100 * (correct / len(train_loader.dataset))
     print("Training loss for epoch {} is {:.4f}".format(epoch, train_loss))
 
-    return train_loss
+    return (train_acc, train_loss)
 
 
 def eval_model(model, test_loader, criterion, epoch):
@@ -438,7 +443,7 @@ def train_val_loop(model, transformer):
         training_df = pd.DataFrame()
 
     for epoch in range(1, args.epochs + 1):
-        train_loss = train_model(model, train_loader, optimizer, criterion, epoch)
+        train_acc, train_loss = train_model(model, train_loader, optimizer, criterion, epoch)
         acc, val_loss = eval_model(model, validation_loader, criterion, epoch)
 
         if val_loss <= best_loss:
@@ -457,7 +462,8 @@ def train_val_loop(model, transformer):
                     {
                         "Epoch": epoch,
                         "Training Loss": train_loss,
-                        "Accuracy": acc,
+                        "Traing Accuracy": train_acc,
+                        "Validation Accuracy": acc,
                         "Validation Loss": val_loss,
                     }
                 ]
