@@ -15,7 +15,9 @@ from tqdm import tqdm
 import numpy as np
 
 import pandas as pd
-
+from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 def arg_creator():
     """
@@ -82,6 +84,12 @@ def arg_creator():
         type=str,
         default=None,
         help="if set, this flag's input will be the filename for a csv with accuracy, loss, and epoch",
+    )
+
+    parser.add_argument(
+        "--conf_matrix",
+        action="store_true",
+        help="when set, generates a confusion matrix",
     )
     return parser.parse_args()
 
@@ -473,6 +481,48 @@ def train_val_loop(model, transformer):
     if args.store_output is not None:
         training_df.to_csv(args.store_output + ".csv")
 
+def confusion_matrix_gen(model, transformer):
+    image_pathlist = path_label_creator(IMAGE_PATH)
+    criterion = nn.CrossEntropyLoss()
+
+    ds = CustomImageDataset(
+        image_pathlist, transform=transformer, image_path=IMAGE_PATH, pca_enabled=False
+    )
+
+    loader = DataLoader(
+        ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers
+    )
+    predictions = []
+    y_test = []
+
+    with torch.no_grad():
+        model.eval()
+        matrix = torch.zeros(120,120)
+        for img, label in tqdm(loader, total=len(loader)):
+            img = img.float()
+            img, label = img.to(device, dtype=torch.float), label.to(
+                device, dtype=torch.long
+            )
+            output = model(img)
+            
+            pred = output.max(1, keepdim=True)[1]
+            
+            for t, p in zip(label.view(-1),pred.view(-1)):
+                matrix[t.long(),p.long()]+= 1
+
+
+    plt.figure(figsize=(20,20))
+
+    class_names = list(reverse_breed_dict.values())
+    df_cm = pd.DataFrame(matrix, index=class_names, columns=class_names).astype(int)
+    heatmap = sns.heatmap(df_cm, annot=True, fmt="d")
+
+    heatmap.yaxis.set_ticklabels(heatmap.yaxis.get_ticklabels(), rotation=0, ha='right',fontsize=15)
+    heatmap.xaxis.set_ticklabels(heatmap.xaxis.get_ticklabels(), rotation=45, ha='right',fontsize=15)
+    plt.ylabel('True label')
+    plt.xlabel('Predicted label')
+    plt.show()
+    
 
 def main():
     """
@@ -492,7 +542,9 @@ def main():
     if args.load_checkpoint is not None:
         model.load_state_dict(torch.load(args.load_checkpoint, map_location=device))
 
-    if args.predict_mode:
+    if args.conf_matrix:
+        confusion_matrix_gen(model,transformer)
+    elif args.predict_mode:
         predict_img(model, transformer)
     else:
         train_val_loop(model, transformer)
